@@ -1,0 +1,56 @@
+name: Deploy personal homepage to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out project
+        uses: actions/checkout@v4
+      - name: Import full source on the first run
+        shell: bash
+        run: |
+          if [ ! -f src/main.js ]; then
+            python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile
+          with ZipFile('source-code.zip') as archive:
+              for item in archive.infolist():
+                  parts = PurePosixPath(item.filename).parts[1:]
+                  if not parts or parts[0] == '.github' or '..' in parts or item.is_dir():
+                      continue
+                  target = Path(*parts)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(archive.read(item))
+          PY
+            git add src public scripts dist package.json pnpm-lock.yaml pnpm-workspace.yaml vite.config.js index.html .gitignore README.md *.md *.cmd
+            if ! git diff --cached --quiet; then
+              git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Import complete personal homepage source and static build'
+              git push
+            fi
+          fi
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Upload the verified static build
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
